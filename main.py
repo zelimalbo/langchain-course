@@ -5,12 +5,30 @@ load_dotenv()
 from langchain_classic import hub
 from langchain_classic.agents import AgentExecutor
 from langchain_classic.agents.react.agent import create_react_agent
+from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableLambda
 from langchain_ollama import ChatOllama
 from langchain_tavily import TavilySearch
 
+from prompt import REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS
+from schemas import AgentResponse
+
 tools = [TavilySearch()]
 llm = ChatOllama(model="llama3.2", temperature=0)
+structured_llm = llm.with_structured_output(AgentResponse)
 react_prompt = hub.pull("hwchase17/react")
+react_prompt_with_format_instructions = PromptTemplate(
+    template=REACT_PROMPT_WITH_FORMAT_INSTRUCTIONS,
+    input_variables=[
+        "tool_names",
+        "input",
+        "agent_scratchpad",
+    ],
+).partial(
+    format_instructions="""""",
+)
+
+
 agent = create_react_agent(
     llm=llm,
     tools=tools,
@@ -21,11 +39,15 @@ agent_executor = AgentExecutor.from_agent_and_tools(
     tools=tools,
     verbose=True,
 )
-chain = agent_executor
+extract_output = RunnableLambda(
+    lambda x: x["output"]
+)
+chain = agent_executor | extract_output | structured_llm
+ 
 
 def main():
     result = chain.invoke(
-        input = {
+        input={
             "input": "search for 3 job postings for an ai engineer in dublin, ireland on linkedin and list their details",
         }
     )
